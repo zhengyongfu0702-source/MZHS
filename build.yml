@@ -93,6 +93,7 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             IPHONEOS_DEPLOYMENT_TARGET=15.0 \
+            PRODUCT_BUNDLE_IDENTIFIER=com.zhengyongfu.meizhuang2 \
             clean build
 
       - name: 假签名并打包 IPA
@@ -119,6 +120,8 @@ jobs:
           # 2) 强制改写包内 Info.plist，用传统图标声明（不依赖仓库里的 Info.plist 是否已更新）
           /usr/libexec/PlistBuddy -c "Delete :CFBundleIcons" "$APP/Info.plist" 2>/dev/null || true
           /usr/libexec/PlistBuddy -c "Delete :CFBundleIconFiles" "$APP/Info.plist" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Delete :CFBundleIconFile" "$APP/Info.plist" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon.png" "$APP/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :CFBundleIconFiles array" "$APP/Info.plist"
           for f in Icon-60@2x.png Icon-60@3x.png Icon-76@2x.png Icon-1024.png AppIcon.png; do
             /usr/libexec/PlistBuddy -c "Add :CFBundleIconFiles: string $f" "$APP/Info.plist"

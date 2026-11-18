@@ -18,6 +18,8 @@
     <string>APPL</string>
     <key>CFBundleIconName</key>
     <string>AppIcon</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon.png</string>
     <key>CFBundleIcons</key>
     <dict>
         <key>CFBundlePrimaryIcon</key>

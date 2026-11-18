@@ -3,7 +3,8 @@ import UIKit
 import LocalAuthentication
 
 // 在网页壳外面包一层原生增强：Face ID 锁 / 原生扫码 / 屏幕常亮。
-// 网页版本身不改动，界面保持原样，只多一个右上角悬浮工具钮。
+// 网页版本身不改动，界面保持原样；悬浮工具按钮已按用户要求移除，界面无任何多余元素。
+// Face ID 锁在启动时自动验证，不依赖按钮；扫码/常亮代码保留但暂无入口。
 struct EnhancedWrapper: View {
     @AppStorage("mz_bio_lock") private var bioLock = false
     @AppStorage("mz_keep_awake") private var keepAwake = false
@@ -20,26 +21,6 @@ struct EnhancedWrapper: View {
     var body: some View {
         ZStack {
             WebViewContainer()
-
-            // 右上角悬浮工具钮（不遮挡网页内容，半透明）
-            VStack {
-                HStack {
-                    Spacer()
-                    Button {
-                        self.showTools = true
-                    } label: {
-                        Image(systemName: "wrench.and.screwdriver.fill")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(.white)
-                            .frame(width: 38, height: 38)
-                            .background(Color.black.opacity(0.42))
-                            .clipShape(Circle())
-                    }
-                    .padding(.trailing, 14)
-                    .padding(.top, 10)
-                }
-                Spacer()
-            }
 
             // 提示条
             if !self.toast.isEmpty {
