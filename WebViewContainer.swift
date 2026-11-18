@@ -79,6 +79,8 @@ struct WebViewContainer: UIViewRepresentable {
                              WKScriptMessageHandler,
                              UIImagePickerControllerDelegate, UINavigationControllerDelegate {
         weak var webView: WKWebView?
+        // 防止 checkBuild/reload 互相触发造成"加载->空白->再加载"的死循环
+        private var lastBundledLoad: Date = .distantPast
 
         // 拦截整页级导航：任何对首页的 reload / location.replace(?_r=) /
         // 重新导航到域名首页的请求，一律取消并改回内置 HTML，杜绝离线白屏与自动更新循环。
@@ -92,16 +94,29 @@ struct WebViewContainer: UIViewRepresentable {
             let isMain = navigationAction.targetFrame?.isMainFrame ?? true
             let host = url.host?.lowercased() ?? ""
             let isHome = host == "736918.top" || host == "www.736918.top"
-            if isMain && isHome && (url.path.isEmpty || url.path == "/") {
-                decisionHandler(.cancel)
-                loadBundled(into: webView)
-                return
+            if isMain {
+                // 首页整页导航（reload / location.replace(?_r=) / 重新进首页）一律改回内置页
+                if isHome && (url.path.isEmpty || url.path == "/") {
+                    decisionHandler(.cancel)
+                    loadBundled(into: webView)
+                    return
+                }
+                // location.reload() 在 loadHTMLString 页面上可能变成 about:blank -> 白屏
+                if url.absoluteString == "about:blank" && navigationAction.navigationType == .reload {
+                    decisionHandler(.cancel)
+                    loadBundled(into: webView)
+                    return
+                }
             }
             // 其它导航：安装描述文件、下载 APK、外部链接等正常放行
             decisionHandler(.allow)
         }
 
         private func loadBundled(into web: WKWebView) {
+            // 1.5 秒内重复请求直接忽略，掐断任何自动刷新循环
+            let now = Date()
+            if now.timeIntervalSince(self.lastBundledLoad) < 1.5 { return }
+            self.lastBundledLoad = now
             web.loadHTMLString(WebViewContainer.bundledHTML(), baseURL: WebViewContainer.baseURL)
         }
 

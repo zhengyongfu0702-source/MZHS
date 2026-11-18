@@ -12,6 +12,9 @@ struct EnhancedWrapper: View {
     @State private var showTools = false
     @State private var showScanner = false
     @State private var locked = false
+    // 防重复弹脸：正在验证中 / 只有真正退到后台回来才需要重新验证
+    @State private var authenticating = false
+    @State private var needAuthOnActive = false
     @State private var toast = ""
 
     var body: some View {
@@ -81,13 +84,26 @@ struct EnhancedWrapper: View {
         }
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = self.keepAwake
-            self.requestAuthIfNeeded()
+            // 冷启动只验证一次。先盖住页面，避免闪一下数据。
+            if self.bioLock {
+                self.locked = true
+                self.authenticate()
+            }
         }
         .onChange(of: self.scenePhase) { phase in
-            if phase == .active {
-                self.requestAuthIfNeeded()
-            } else if phase == .background {
-                if self.bioLock { self.locked = true }
+            if phase == .background {
+                if self.bioLock {
+                    self.locked = true
+                    self.needAuthOnActive = true
+                }
+            } else if phase == .active {
+                // 关键修复：只有"真的退到后台再回来"才重新验证。
+                // 系统 Face ID 弹窗造成的 inactive -> active 不会置位 needAuthOnActive，
+                // 因此不会反复弹出人脸识别。
+                if self.needAuthOnActive {
+                    self.needAuthOnActive = false
+                    self.authenticate()
+                }
             }
         }
     }
@@ -103,7 +119,7 @@ struct EnhancedWrapper: View {
                 Text("已锁定")
                     .font(.headline)
                 Button {
-                    self.requestAuthIfNeeded()
+                    self.authenticate()
                 } label: {
                     Text("点按解锁")
                         .font(.body)
@@ -121,6 +137,7 @@ struct EnhancedWrapper: View {
         if self.bioLock {
             self.bioLock = false
             self.locked = false
+            self.needAuthOnActive = false
             self.showToast("已关闭 Face ID 锁")
         } else {
             let ctx = LAContext()
@@ -140,17 +157,23 @@ struct EnhancedWrapper: View {
         self.showToast(self.keepAwake ? "屏幕常亮已开启" : "屏幕常亮已关闭")
     }
 
-    private func requestAuthIfNeeded() {
-        guard self.bioLock else { return }
+    // 唯一的验证入口：带"正在验证"闸门，任何情况下都不会并发弹第二次。
+    private func authenticate() {
+        guard self.bioLock, !self.authenticating else { return }
         let ctx = LAContext()
         var err: NSError?
         guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &err) else {
+            // 设备没有密码/生物识别时不要卡在锁层
             self.locked = false
             return
         }
-        ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "验证以打开回收统计") { ok, _ in
+        self.authenticating = true
+        ctx.evaluatePolicy(.deviceOwnerAuthentication,
+                           localizedReason: "验证以打开回收统计") { ok, _ in
             DispatchQueue.main.async {
+                self.authenticating = false
                 self.locked = !ok
+                if ok { self.needAuthOnActive = false }
             }
         }
     }

@@ -21,19 +21,61 @@ jobs:
           brew install xcodegen
           brew install ldid
 
-      - name: 生成 AppIcon 资源目录
+      - name: 生成 AppIcon 资源目录（全尺寸，修复 TrollStore 图标空白）
         run: |
           set -e
+          rm -rf Assets.xcassets
           mkdir -p Assets.xcassets/AppIcon.appiconset
-          cp AppIcon.png Assets.xcassets/AppIcon.appiconset/Icon-1024.png
-          cat > Assets.xcassets/AppIcon.appiconset/Contents.json <<'EOF'
+          # 根目录 Contents.json 必须存在，否则 actool 可能整包跳过资源目录
+          cat > Assets.xcassets/Contents.json <<'EOF'
+          { "info": { "author": "xcode", "version": 1 } }
+          EOF
+          cd Assets.xcassets/AppIcon.appiconset
+          # 用源图裁出各尺寸，保证真机图标不空白
+          sips -z 40 40   ../../AppIcon.png --out Icon-20@2x.png     >/dev/null
+          sips -z 60 60   ../../AppIcon.png --out Icon-20@3x.png     >/dev/null
+          sips -z 58 58   ../../AppIcon.png --out Icon-29@2x.png     >/dev/null
+          sips -z 87 87   ../../AppIcon.png --out Icon-29@3x.png     >/dev/null
+          sips -z 80 80   ../../AppIcon.png --out Icon-40@2x.png     >/dev/null
+          sips -z 120 120 ../../AppIcon.png --out Icon-40@3x.png     >/dev/null
+          sips -z 120 120 ../../AppIcon.png --out Icon-60@2x.png     >/dev/null
+          sips -z 180 180 ../../AppIcon.png --out Icon-60@3x.png     >/dev/null
+          sips -z 20 20   ../../AppIcon.png --out Icon-ipad-20.png   >/dev/null
+          sips -z 40 40   ../../AppIcon.png --out Icon-ipad-20@2x.png >/dev/null
+          sips -z 29 29   ../../AppIcon.png --out Icon-ipad-29.png   >/dev/null
+          sips -z 58 58   ../../AppIcon.png --out Icon-ipad-29@2x.png >/dev/null
+          sips -z 40 40   ../../AppIcon.png --out Icon-ipad-40.png   >/dev/null
+          sips -z 80 80   ../../AppIcon.png --out Icon-ipad-40@2x.png >/dev/null
+          sips -z 76 76   ../../AppIcon.png --out Icon-ipad-76.png   >/dev/null
+          sips -z 152 152 ../../AppIcon.png --out Icon-ipad-76@2x.png >/dev/null
+          sips -z 167 167 ../../AppIcon.png --out Icon-ipad-83@2x.png >/dev/null
+          cp ../../AppIcon.png Icon-1024.png
+          cat > Contents.json <<'EOF'
           {
             "images": [
-              { "filename": "Icon-1024.png", "idiom": "universal", "platform": "ios", "size": "1024x1024" }
+              {"filename":"Icon-20@2x.png","idiom":"iphone","scale":"2x","size":"20x20"},
+              {"filename":"Icon-20@3x.png","idiom":"iphone","scale":"3x","size":"20x20"},
+              {"filename":"Icon-29@2x.png","idiom":"iphone","scale":"2x","size":"29x29"},
+              {"filename":"Icon-29@3x.png","idiom":"iphone","scale":"3x","size":"29x29"},
+              {"filename":"Icon-40@2x.png","idiom":"iphone","scale":"2x","size":"40x40"},
+              {"filename":"Icon-40@3x.png","idiom":"iphone","scale":"3x","size":"40x40"},
+              {"filename":"Icon-60@2x.png","idiom":"iphone","scale":"2x","size":"60x60"},
+              {"filename":"Icon-60@3x.png","idiom":"iphone","scale":"3x","size":"60x60"},
+              {"filename":"Icon-ipad-20.png","idiom":"ipad","scale":"1x","size":"20x20"},
+              {"filename":"Icon-ipad-20@2x.png","idiom":"ipad","scale":"2x","size":"20x20"},
+              {"filename":"Icon-ipad-29.png","idiom":"ipad","scale":"1x","size":"29x29"},
+              {"filename":"Icon-ipad-29@2x.png","idiom":"ipad","scale":"2x","size":"29x29"},
+              {"filename":"Icon-ipad-40.png","idiom":"ipad","scale":"1x","size":"40x40"},
+              {"filename":"Icon-ipad-40@2x.png","idiom":"ipad","scale":"2x","size":"40x40"},
+              {"filename":"Icon-ipad-76.png","idiom":"ipad","scale":"1x","size":"76x76"},
+              {"filename":"Icon-ipad-76@2x.png","idiom":"ipad","scale":"2x","size":"76x76"},
+              {"filename":"Icon-ipad-83@2x.png","idiom":"ipad","scale":"2x","size":"83.5x83.5"},
+              {"filename":"Icon-1024.png","idiom":"ios-marketing","scale":"1x","size":"1024x1024"}
             ],
             "info": { "author": "xcode", "version": 1 }
           }
           EOF
+          cd ../..
           ls -la Assets.xcassets/AppIcon.appiconset
 
       - name: 生成 Xcode 工程

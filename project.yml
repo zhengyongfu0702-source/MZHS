@@ -41,6 +41,7 @@ targets:
     resources:
       - path: Assets.xcassets
       - path: index.html
+      - path: AppIcon.png
     settings:
       INFOPLIST_FILE: Info.plist
       PRODUCT_NAME: Meizhuang
