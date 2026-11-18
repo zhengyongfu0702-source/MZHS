@@ -1,0 +1,79 @@
+name: 编译 iOS App (TrollStore 自签)
+
+# 网页套壳版：直接加载 https://736918.top，业务功能全在网页版。
+# 扁平结构：仓库根目录直接放 .swift / Info.plist / AppIcon.png，
+# 编译时自动生成 AppIcon 资源目录，无需网页端上传文件夹。
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 安装 XcodeGen 与 ldid
+        run: |
+          brew install xcodegen
+          brew install ldid
+
+      - name: 生成 AppIcon 资源目录
+        run: |
+          set -e
+          mkdir -p Assets.xcassets/AppIcon.appiconset
+          cp AppIcon.png Assets.xcassets/AppIcon.appiconset/Icon-1024.png
+          cat > Assets.xcassets/AppIcon.appiconset/Contents.json <<'EOF'
+          {
+            "images": [
+              { "filename": "Icon-1024.png", "idiom": "universal", "platform": "ios", "size": "1024x1024" }
+            ],
+            "info": { "author": "xcode", "version": 1 }
+          }
+          EOF
+          ls -la Assets.xcassets/AppIcon.appiconset
+
+      - name: 生成 Xcode 工程
+        run: xcodegen generate --spec project.yml
+
+      - name: 编译（不签名）
+        run: |
+          xcodebuild \
+            -project Meizhuang.xcodeproj \
+            -scheme Meizhuang \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            IPHONEOS_DEPLOYMENT_TARGET=15.0 \
+            clean build
+
+      - name: 假签名并打包 IPA
+        run: |
+          set -e
+          APP="build/Build/Products/Release-iphoneos/Meizhuang.app"
+          if [ ! -d "$APP" ]; then
+            echo "编译产物不存在：$APP"
+            find build -maxdepth 5 -name "*.app" -print
+            exit 1
+          fi
+          if [ -f "$APP/Meizhuang" ]; then
+            ldid -S "$APP/Meizhuang"
+          fi
+          mkdir -p Payload
+          cp -R "$APP" Payload/Meizhuang.app
+          zip -qry Meizhuang.ipa Payload
+          shasum -a 256 Meizhuang.ipa
+          ls -lh Meizhuang.ipa
+
+      - name: 上传 IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: meizhuang-ios
+          path: Meizhuang.ipa
+          retention-days: 90
