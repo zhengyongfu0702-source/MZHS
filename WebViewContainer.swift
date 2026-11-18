@@ -17,11 +17,33 @@ struct WebViewContainer: UIViewRepresentable {
         config.mediaTypesRequiringUserActionForPlayback = []
         config.defaultWebpagePreferences.allowsContentJavaScript = true
 
+        // 拦截网页里 input[type=file] 的点击，改走原生相册（绕开新版 SDK 对选图代理的 iOS 18.4 限制）
+        let hook = """
+        (function(){
+          if (window.__mzHookInstalled) return;
+          window.__mzHookInstalled = true;
+          document.addEventListener('click', function(e){
+            var t = e.target;
+            if (t && t.tagName === 'INPUT' && t.type === 'file') {
+              e.preventDefault();
+              e.stopPropagation();
+              window.__mzPickInput = t;
+              try { window.webkit.messageHandlers.mzPickImage.postMessage({}); } catch(err) {}
+            }
+          }, true);
+        })();
+        """
+        config.userContentController.addUserScript(
+            WKUserScript(source: hook, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        )
+        config.userContentController.add(context.coordinator, name: "mzPickImage")
+
         let web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = context.coordinator
         web.uiDelegate = context.coordinator
         web.scrollView.bounces = true
         web.backgroundColor = UIColor(red: 0.96, green: 0.96, blue: 0.97, alpha: 1.0)
+        context.coordinator.webView = web
         web.load(URLRequest(url: homeURL))
         return web
     }
@@ -29,8 +51,9 @@ struct WebViewContainer: UIViewRepresentable {
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate,
+                             WKScriptMessageHandler,
                              UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-        private var imageCompletion: (([URL]?) -> Void)?
+        weak var webView: WKWebView?
 
         // JS alert
         func webView(_ webView: WKWebView,
@@ -71,45 +94,51 @@ struct WebViewContainer: UIViewRepresentable {
             vc.present(ac, animated: true)
         }
 
-        // 网页 input[type=file]：相册选图（拍照识别/留档用）
-        func webView(_ webView: WKWebView,
-                     runJavaScriptOpenPanelWithParameters parameters: WKOpenPanelParameters,
-                     initiatedByFrame frame: WKFrameInfo,
-                     completionHandler: @escaping ([URL]?) -> Void) {
-            guard let vc = self.topVC(from: webView) else { completionHandler(nil); return }
+        // 收到网页选图请求 -> 弹系统相册
+        func userContentController(_ userContentController: WKUserContentController,
+                                   didReceive message: WKScriptMessage) {
+            guard message.name == "mzPickImage", let web = self.webView else { return }
+            guard let vc = self.topVC(from: web) else { return }
             let picker = UIImagePickerController()
             picker.sourceType = .photoLibrary
             picker.mediaTypes = ["public.image"]
             picker.delegate = self
-            self.imageCompletion = completionHandler
             vc.present(picker, animated: true)
         }
 
+        // 相册选完 -> 把图片塞回网页的 input 并触发 change
         func imagePickerController(_ picker: UIImagePickerController,
                                    didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            var result: [URL]? = nil
-            if let imgURL = info[.imageURL] as? URL {
-                result = [imgURL]
-            } else {
-                let img = (info[.editedImage] as? UIImage) ?? (info[.originalImage] as? UIImage)
-                if let img = img, let data = img.jpegData(compressionQuality: 0.9) {
-                    let tmp = FileManager.default.temporaryDirectory
-                        .appendingPathComponent("mz-\(UUID().uuidString).jpg")
-                    try? data.write(to: tmp)
-                    result = [tmp]
-                }
-            }
+            let img = (info[.editedImage] as? UIImage) ?? (info[.originalImage] as? UIImage)
             picker.dismiss(animated: true)
-            let cb = self.imageCompletion
-            self.imageCompletion = nil
-            cb?(result)
+            guard let img = img,
+                  let data = img.jpegData(compressionQuality: 0.9),
+                  let web = self.webView else { return }
+            let b64 = data.base64EncodedString()
+            let js = """
+            (function(){
+              var input = window.__mzPickInput;
+              window.__mzPickInput = null;
+              if (!input) return;
+              try {
+                var bin = atob('\(b64)');
+                var arr = new Uint8Array(bin.length);
+                for (var i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+                var file = new File([arr], 'mz-photo.jpg', {type:'image/jpeg'});
+                if (typeof DataTransfer !== 'undefined') {
+                  var dt = new DataTransfer();
+                  dt.items.add(file);
+                  input.files = dt.files;
+                }
+                input.dispatchEvent(new Event('change', {bubbles:true}));
+              } catch(e) { console.error('mz pick', e); }
+            })();
+            """
+            web.evaluateJavaScript(js, completionHandler: nil)
         }
 
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
             picker.dismiss(animated: true)
-            let cb = self.imageCompletion
-            self.imageCompletion = nil
-            cb?(nil)
         }
 
         private func topVC(from view: UIView) -> UIViewController? {
