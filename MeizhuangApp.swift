@@ -4,7 +4,7 @@ import SwiftUI
 struct MeizhuangApp: App {
     var body: some Scene {
         WindowGroup {
-            WebViewContainer()
+            EnhancedWrapper()
         }
     }
 }

@@ -2,10 +2,13 @@ import SwiftUI
 import WebKit
 import UIKit
 
-// 网页套壳：直接加载线上域名，所有业务功能都在网页版里，壳只负责显示。
-// 网页版自带 Service Worker 离线缓存 + localStorage 登录态，WKWebView 均支持。
+// 更保险的离线方案：
+// 页面外壳（index.html，JS/CSS 全内联）内置进 APP，永远从本地加载，断网冷启动也秒开、绝不白屏。
+// baseURL 固定为线上域名 -> localStorage / 缓存数据与线上同 origin，离线快照、登录态稳定可用。
+// 数据请求（fetch /api/*、/.cloud/*）走相对路径：联网时到线上，离线时网页自带的离线逻辑接管。
+// 网页里的整页跳转（location.reload / location.replace(?_r=)）会被导航拦截，全部改回内置加载。
 struct WebViewContainer: UIViewRepresentable {
-    let homeURL = URL(string: "https://736918.top")!
+    static let baseURL = URL(string: "https://736918.top/")!
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -44,16 +47,63 @@ struct WebViewContainer: UIViewRepresentable {
         web.scrollView.bounces = true
         web.backgroundColor = UIColor(red: 0.96, green: 0.96, blue: 0.97, alpha: 1.0)
         context.coordinator.webView = web
-        web.load(URLRequest(url: homeURL))
+        NativeBridge.shared.webView = web
+        // 页面外壳永远从内置 HTML 加载（与网络无关）
+        loadBundledPage(into: web)
         return web
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 
+    // 从 APP Bundle 读内置网页；读不到时给一个明确提示页，而不是白屏
+    static func bundledHTML() -> String {
+        if let url = Bundle.main.url(forResource: "index", withExtension: "html"),
+           let html = try? String(contentsOf: url, encoding: .utf8) {
+            return html
+        }
+        return """
+        <!doctype html><html><head><meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>body{font:16px -apple-system,sans-serif;padding:32px;color:#333}
+        b{color:#c00}</style></head><body>
+        <h3>内置页面未找到</h3><p>请重新编译安装，确认 index.html 已打进 APP。</p>
+        </body></html>
+        """
+    }
+
+    func loadBundledPage(into web: WKWebView) {
+        web.loadHTMLString(WebViewContainer.bundledHTML(), baseURL: WebViewContainer.baseURL)
+    }
+
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate,
                              WKScriptMessageHandler,
                              UIImagePickerControllerDelegate, UINavigationControllerDelegate {
         weak var webView: WKWebView?
+
+        // 拦截整页级导航：任何对首页的 reload / location.replace(?_r=) /
+        // 重新导航到域名首页的请求，一律取消并改回内置 HTML，杜绝离线白屏与自动更新循环。
+        func webView(_ webView: WKWebView,
+                     decidePolicyFor navigationAction: WKNavigationAction,
+                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            guard let url = navigationAction.request.url else {
+                decisionHandler(.allow)
+                return
+            }
+            let isMain = navigationAction.targetFrame?.isMainFrame ?? true
+            let host = url.host?.lowercased() ?? ""
+            let isHome = host == "736918.top" || host == "www.736918.top"
+            if isMain && isHome && (url.path.isEmpty || url.path == "/") {
+                decisionHandler(.cancel)
+                loadBundled(into: webView)
+                return
+            }
+            // 其它导航：安装描述文件、下载 APK、外部链接等正常放行
+            decisionHandler(.allow)
+        }
+
+        private func loadBundled(into web: WKWebView) {
+            web.loadHTMLString(WebViewContainer.bundledHTML(), baseURL: WebViewContainer.baseURL)
+        }
 
         // JS alert
         func webView(_ webView: WKWebView,

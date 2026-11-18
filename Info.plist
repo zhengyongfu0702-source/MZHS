@@ -16,6 +16,8 @@
     <string>$(PRODUCT_NAME)</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
     <key>CFBundleShortVersionString</key>
     <string>3.0</string>
     <key>CFBundleVersion</key>
@@ -47,5 +49,7 @@
     <string>用于从相册选择图片识别与上传</string>
     <key>NSPhotoLibraryAddUsageDescription</key>
     <string>用于保存识别结果图片</string>
+    <key>NSFaceIDUsageDescription</key>
+    <string>用于解锁应用，保护回收数据隐私</string>
 </dict>
 </plist>
